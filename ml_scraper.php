@@ -225,10 +225,10 @@ function ml_fetch_html($url, $userAgent, $cookie, $debug, $proxy = null) {
         CURLOPT_HTTPHEADER => [
             'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'Accept-Language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
-            'Accept-Encoding: gzip, deflate',
         ],
         CURLOPT_COOKIE => $cookie,
         CURLOPT_TIMEOUT => 20,
+        CURLOPT_SSL_VERIFYPEER => false,
     ]);
     $html = curl_exec($ch);
     $curlErr = curl_error($ch);
@@ -611,17 +611,22 @@ function ml_get_item_metrics($itemId, $config = []) {
     // Título
     $metrics['title'] = $components['header']['title'] ?? null;
     
-    // Preço
+    // Preço (com fallbacks)
     if (isset($components['price']['model']['amount'])) {
         $metrics['price'] = $components['price']['model']['amount'];
     } elseif (isset($components['price']['model']['price']['amount'])) {
         $metrics['price'] = $components['price']['model']['price']['amount'];
+    } elseif (isset($components['price']['model']['variants'][0]['amount'])) {
+        $metrics['price'] = $components['price']['model']['variants'][0]['amount'];
     }
 
-    // Estoque e Vendas (ficam no buy_box)
+    // Estoque e Vendas (ficam no buy_box ou quantity_selector)
     $buyBox = $components['buy_box'] ?? [];
-    $quantityModel = $buyBox['model']['quantity'] ?? [];
-    $metrics['available_quantity'] = $quantityModel['available_quantity'] ?? null;
+    $qtySelector = $components['quantity_selector'] ?? [];
+    
+    $metrics['available_quantity'] = $buyBox['model']['quantity']['available_quantity'] ?? 
+                                     $qtySelector['model']['quantity']['available_quantity'] ?? 
+                                     null;
     
     // Vendas Totais
     $subtitle = $components['header']['subtitle'] ?? '';
