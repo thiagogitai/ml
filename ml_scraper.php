@@ -559,3 +559,80 @@ function ml_search_items($query, $sort = '', $page = 1, $config = []) {
 
     return ['items' => $items, 'error' => $error];
 }
+
+/**
+ * Busca detalhes e métricas de um item específico (anúncio).
+ */
+function ml_get_item_metrics($itemId, $config = []) {
+    $formattedId = $itemId;
+    // Garante que o ID MLB tenha o hífen para a URL do produto
+    if (preg_match('/^(MLB)(\d+)$/i', $itemId, $m)) {
+        $formattedId = strtoupper($m[1]) . '-' . $m[2];
+    }
+    
+    $url = "https://produto.mercadolivre.com.br/{$formattedId}";
+    
+    // Se o ID for de produto de catálogo (/p/MLB...), a URL muda um pouco, mas o ML redireciona.
+    if (strpos(strtoupper($itemId), 'MLB') !== 0) {
+        $url = "https://www.mercadolivre.com.br/p/{$itemId}";
+    }
+
+    $userAgent = $config['user_agent'] ?? 'Mozilla/5.0';
+    $cookie = $config['ml_cookie'] ?? '';
+    
+    [$html, $status, $err] = ml_fetch_html($url, $userAgent, $cookie, false);
+    
+    if ($status !== 200 || !$html) {
+        return ['ok' => false, 'error' => "Falha ao carregar página do produto (Status $status). $err"];
+    }
+
+    $state = ml_extract_preloaded_state($html);
+    if (!$state) {
+        return ['ok' => false, 'error' => 'Não foi possível extrair os dados internos (__PRELOADED_STATE__) da página.'];
+    }
+
+    // Estrutura simplificada para retorno
+    $metrics = [
+        'id' => $itemId,
+        'title' => null,
+        'sold_quantity' => null,
+        'available_quantity' => null,
+        'price' => null,
+        'currency' => 'BRL',
+        'created_at' => null,
+        'seller_id' => null,
+        'seller_reputation' => null,
+        'status' => null,
+        'condition' => null,
+    ];
+
+    $components = $state['pageState']['initialState']['components'] ?? $state['initialState']['components'] ?? [];
+    
+    // Título
+    $metrics['title'] = $components['header']['title'] ?? null;
+    
+    // Preço
+    if (isset($components['price']['model']['amount'])) {
+        $metrics['price'] = $components['price']['model']['amount'];
+    } elseif (isset($components['price']['model']['price']['amount'])) {
+        $metrics['price'] = $components['price']['model']['price']['amount'];
+    }
+
+    // Estoque e Vendas (ficam no buy_box)
+    $buyBox = $components['buy_box'] ?? [];
+    $quantityModel = $buyBox['model']['quantity'] ?? [];
+    $metrics['available_quantity'] = $quantityModel['available_quantity'] ?? null;
+    
+    // Vendas Totais
+    $subtitle = $components['header']['subtitle'] ?? '';
+    $metrics['sold_quantity'] = ml_parse_sold_quantity($subtitle);
+
+    // Vendedor
+    $seller = $components['seller_data'] ?? [];
+    $metrics['seller_id'] = $seller['model']['seller_id'] ?? null;
+    $metrics['seller_reputation'] = $seller['model']['reputation_level'] ?? null;
+    
+    $metrics['status'] = $state['pageState']['initialState']['status'] ?? $state['initialState']['status'] ?? null;
+
+    return ['ok' => true, 'data' => $metrics];
+}
