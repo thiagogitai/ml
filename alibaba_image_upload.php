@@ -4,6 +4,9 @@ $config = require __DIR__ . '/config.php';
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 
+// Autenticação
+require __DIR__ . '/auth.php';
+
 function respond($status, $payload) {
     http_response_code($status);
     echo json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);

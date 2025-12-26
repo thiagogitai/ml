@@ -392,7 +392,7 @@ $error = $result['error'];
         try {
           var url;
           if (String(imagePath).indexOf('/icbuimgsearch/') === 0) {
-            url = 'alibaba_image_search.php?imageAddress=' + encodeURIComponent(imagePath) + '&pageSize=20&beginPage=1&language=pt';
+            url = 'alibaba_image_search.php?imageAddress=' + encodeURIComponent(imagePath) + '&pageSize=20&beginPage=1&language=pt&token=<?php echo htmlspecialchars($config["api_token"], ENT_QUOTES, "UTF-8"); ?>';
           } else {
             // 1) Tenta upload (picUrl/imageUrl) para obter /icbuimgsearch/... e melhorar a busca por imagem.
             // 2) Se falhar, cai no modo direto por URL.
@@ -401,7 +401,7 @@ $error = $result['error'];
                 method: 'POST',
                 credentials: 'same-origin',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: 'imageUrl=' + encodeURIComponent(imagePath) + '&language=pt'
+                body: 'imageUrl=' + encodeURIComponent(imagePath) + '&language=pt&token=<?php echo htmlspecialchars($config["api_token"], ENT_QUOTES, "UTF-8"); ?>'
               });
               var up = await upRes.json();
               if (up && up.ok && up.imageAddress && String(up.imageAddress).indexOf('/icbuimgsearch/') === 0) {
@@ -409,12 +409,12 @@ $error = $result['error'];
                 if (openTab && up.ossUrl) {
                   openTab.href = buildAlibabaImageSearchUrl(up.ossUrl, '');
                 }
-                url = 'alibaba_image_search.php?imageAddress=' + encodeURIComponent(imagePath) + '&pageSize=20&beginPage=1&language=pt';
+                url = 'alibaba_image_search.php?imageAddress=' + encodeURIComponent(imagePath) + '&pageSize=20&beginPage=1&language=pt&token=<?php echo htmlspecialchars($config["api_token"], ENT_QUOTES, "UTF-8"); ?>';
               } else {
-                url = 'alibaba_image_search.php?imagePath=' + encodeURIComponent(imagePath) + '&pageSize=20&beginPage=1&language=pt';
+                url = 'alibaba_image_search.php?imagePath=' + encodeURIComponent(imagePath) + '&pageSize=20&beginPage=1&language=pt&token=<?php echo htmlspecialchars($config["api_token"], ENT_QUOTES, "UTF-8"); ?>';
               }
             } catch (e) {
-              url = 'alibaba_image_search.php?imagePath=' + encodeURIComponent(imagePath) + '&pageSize=20&beginPage=1&language=pt';
+              url = 'alibaba_image_search.php?imagePath=' + encodeURIComponent(imagePath) + '&pageSize=20&beginPage=1&language=pt&token=<?php echo htmlspecialchars($config["api_token"], ENT_QUOTES, "UTF-8"); ?>';
             }
           }
           if (region) url += '&region=' + encodeURIComponent(region);
