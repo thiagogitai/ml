@@ -19,8 +19,14 @@ if (empty($validToken)) {
 }
 
 // Tenta pegar o token do Header ou Query Params
-$headers = getallheaders();
-$authHeader = $headers['Authorization'] ?? $headers['authorization'] ?? '';
+// Fallback para ambientes sem getallheaders()
+if (function_exists('getallheaders')) {
+    $headers = getallheaders();
+    $authHeader = $headers['Authorization'] ?? $headers['authorization'] ?? '';
+} else {
+    // Fallback manual para nginx/fastcgi
+    $authHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
+}
 
 // Aceita "Bearer TOKEN" ou apenas "TOKEN"
 $receivedToken = '';
@@ -33,6 +39,11 @@ if (preg_match('/Bearer\s+(.*)$/i', $authHeader, $matches)) {
 // Fallback: Tenta pegar da URL (?token=XYZ) para facilitar testes no navegador
 if (empty($receivedToken) && isset($_GET['token'])) {
     $receivedToken = trim($_GET['token']);
+}
+
+// Fallback adicional: tenta POST
+if (empty($receivedToken) && isset($_POST['token'])) {
+    $receivedToken = trim($_POST['token']);
 }
 
 // Verifica
