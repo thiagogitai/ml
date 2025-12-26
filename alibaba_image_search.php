@@ -39,9 +39,14 @@ if ($imageAddressParam !== '') {
     $imageType = 'oss';
     $imageAddress = $imageAddressParam;
 } else {
-    if (filter_var($imagePath, FILTER_VALIDATE_URL) === false) {
-        respond(400, ['ok' => false, 'error' => 'Parâmetro `imagePath` inválido (precisa ser URL).']);
+    if ($imagePath !== '' && strpos($imagePath, '//') === 0) {
+        $imagePath = 'https:' . $imagePath;
     }
+    
+    if (filter_var($imagePath, FILTER_VALIDATE_URL) === false) {
+        respond(400, ['ok' => false, 'error' => 'Parâmetro `imagePath` inválido (precisa ser uma URL completa começando com http ou https).']);
+    }
+    
     if (preg_match('~^https?://icbu-picture\\.oss-[^/]+\\.aliyuncs\\.com(/icbuimgsearch/[^?]+)~i', $imagePath, $m)) {
         $imageType = 'oss';
         $imageAddress = $m[1];
