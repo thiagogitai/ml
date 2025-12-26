@@ -1,0 +1,15 @@
+## Local/private config
+config.local.php
+
+## Debug dumps / caches
+_*.html
+_*.txt
+_cache_*.json
+_ml_debug_meta.json
+
+## OS / tooling
+.DS_Store
+Thumbs.db
+*.log
+/.idea/
+/.vscode/
