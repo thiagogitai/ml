@@ -9,7 +9,7 @@ $config = [
     // Optional: Alibaba cookies to reduce `bxpunish`/captcha on some requests.
     'alibaba_cookie' => '',
     // Security: Token para acessar a API
-    'api_token' => 'seu_token_secreto_aqui',
+    'api_token' => 'ml_secure_vps_8291_xPT',
 ];
 
 $localPath = __DIR__ . '/config.local.php';
