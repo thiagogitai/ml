@@ -31,6 +31,11 @@ function ml_parse_price_brl($priceText) {
         $normalized = str_replace(',', '.', $normalized);
     } elseif (strpos($normalized, ',') !== false) {
         $normalized = str_replace(',', '.', $normalized);
+    } elseif (strpos($normalized, '.') !== false) {
+        // Handle Brazilian thousands separator when there is no decimal comma (e.g. "4.598" => 4598).
+        if (preg_match('/^\\d{1,3}(?:\\.\\d{3})+$/', $normalized)) {
+            $normalized = str_replace('.', '', $normalized);
+        }
     }
     $value = (float)$normalized;
     return $value > 0 ? $value : null;
@@ -474,7 +479,14 @@ function ml_parse_products_from_html($html) {
     $items = [];
     libxml_use_internal_errors(true);
     $doc = new DOMDocument();
-    $doc->loadHTML($html);
+    // Force UTF-8 so extracted text (e.g. shipping labels) doesn't get mojibake.
+    $htmlForDom = $html;
+    if (function_exists('mb_convert_encoding')) {
+        $htmlForDom = mb_convert_encoding($htmlForDom, 'HTML-ENTITIES', 'UTF-8');
+    } else {
+        $htmlForDom = '<?xml encoding="UTF-8">' . $htmlForDom;
+    }
+    $doc->loadHTML($htmlForDom);
     $xpath = new DOMXPath($doc);
 
     $nodes = $xpath->query('//li[contains(@class,"ui-search-layout__item")]');
@@ -483,19 +495,86 @@ function ml_parse_products_from_html($html) {
     }
 
     foreach ($nodes as $node) {
-        $titleNode = $xpath->query('.//h2[contains(@class,"ui-search-item__title")]', $node)->item(0);
-        $linkNode = $xpath->query('.//a[contains(@class,"ui-search-link")]', $node)->item(0);
-        $imgNode = $xpath->query('.//img', $node)->item(0);
-        $priceNode = $xpath->query('.//*[contains(@class,"price-tag-fraction")]', $node)->item(0);
+        $title = null;
+        $link = null;
+        $img = null;
+        $price = null;
+        $priceValue = null;
+        $previousPriceValue = null;
+        $discountLabel = null;
+        $soldText = null;
+        $soldQuantity = null;
+        $ratingValue = null;
+        $shippingText = null;
+        $shippingAdditionalText = null;
 
-        $title = $titleNode ? trim($titleNode->textContent) : null;
-        $link = $linkNode ? $linkNode->getAttribute('href') : null;
-        $img = $imgNode ? $imgNode->getAttribute('data-src') : null;
-        if (!$img && $imgNode) {
-            $img = $imgNode->getAttribute('src');
+        // New (current) Mercado Livre layout: poly-card / poly-component.
+        $polyTitleLinkNode = $xpath->query('.//a[contains(@class,"poly-component__title")]', $node)->item(0);
+        if ($polyTitleLinkNode) {
+            $title = trim($polyTitleLinkNode->textContent);
+            $link = $polyTitleLinkNode->getAttribute('href');
+
+            $polyImgNode = $xpath->query('.//img[contains(@class,"poly-component__picture")]', $node)->item(0);
+            if ($polyImgNode) {
+                $img = $polyImgNode->getAttribute('src') ?: $polyImgNode->getAttribute('data-src');
+            }
+
+            $currencyNode = $xpath->query('.//*[contains(@class,"poly-price__current")]//*[contains(@class,"andes-money-amount__currency-symbol")]', $node)->item(0);
+            $fractionNode = $xpath->query('.//*[contains(@class,"poly-price__current")]//*[contains(@class,"andes-money-amount__fraction")]', $node)->item(0);
+            $centsNode = $xpath->query('.//*[contains(@class,"poly-price__current")]//*[contains(@class,"andes-money-amount__cents")]', $node)->item(0);
+            $currency = $currencyNode ? trim($currencyNode->textContent) : 'R$';
+            $fraction = $fractionNode ? trim($fractionNode->textContent) : null;
+            $cents = $centsNode ? trim($centsNode->textContent) : null;
+            if ($fraction) {
+                $price = $currency . ' ' . $fraction . ($cents ? (',' . $cents) : '');
+                $priceValue = ml_parse_price_brl($price);
+            }
+
+            $prevFractionNode = $xpath->query('.//*[contains(@class,"andes-money-amount--previous")]//*[contains(@class,"andes-money-amount__fraction")]', $node)->item(0);
+            $prevCentsNode = $xpath->query('.//*[contains(@class,"andes-money-amount--previous")]//*[contains(@class,"andes-money-amount__cents")]', $node)->item(0);
+            if ($prevFractionNode) {
+                $prevText = $currency . ' ' . trim($prevFractionNode->textContent) . ($prevCentsNode ? (',' . trim($prevCentsNode->textContent)) : '');
+                $previousPriceValue = ml_parse_price_brl($prevText);
+            }
+
+            $discountNode = $xpath->query('.//*[contains(@class,"andes-money-amount__discount")]', $node)->item(0);
+            if ($discountNode) {
+                $discountLabel = ml_normalize_discount_label($discountNode->textContent);
+            }
+
+            $reviewNode = $xpath->query('.//*[contains(@class,"poly-component__review-compacted")]', $node)->item(0);
+            if ($reviewNode) {
+                $reviewText = trim(preg_replace('/\\s+/', ' ', $reviewNode->textContent));
+                if (preg_match('/\\b(\\d+(?:[\\.,]\\d+)?)\\b/', $reviewText, $m)) {
+                    $ratingValue = (float)str_replace(',', '.', $m[1]);
+                }
+                $soldText = $reviewText;
+                $soldQuantity = ml_parse_sold_quantity($reviewText);
+            }
+
+            $shippingWrap = $xpath->query('.//div[contains(@class,"poly-component__shipping")]', $node)->item(0);
+            if ($shippingWrap) {
+                $shippingTextNode = $xpath->query('.//*[contains(@class,"poly-shipping")]', $shippingWrap)->item(0);
+                $shippingText = $shippingTextNode ? trim(preg_replace('/\\s+/', ' ', $shippingTextNode->textContent)) : null;
+                $shippingAdditionalNode = $xpath->query('.//*[contains(@class,"poly-shipping__additional_text")]', $shippingWrap)->item(0);
+                $shippingAdditionalText = $shippingAdditionalNode ? trim(preg_replace('/\\s+/', ' ', $shippingAdditionalNode->textContent)) : null;
+            }
+        } else {
+            // Older fallback (legacy Mercado Livre HTML).
+            $titleNode = $xpath->query('.//h2[contains(@class,"ui-search-item__title")]', $node)->item(0);
+            $linkNode = $xpath->query('.//a[contains(@class,"ui-search-link")]', $node)->item(0);
+            $imgNode = $xpath->query('.//img', $node)->item(0);
+            $priceNode = $xpath->query('.//*[contains(@class,"price-tag-fraction")]', $node)->item(0);
+
+            $title = $titleNode ? trim($titleNode->textContent) : null;
+            $link = $linkNode ? $linkNode->getAttribute('href') : null;
+            $img = $imgNode ? $imgNode->getAttribute('data-src') : null;
+            if (!$img && $imgNode) {
+                $img = $imgNode->getAttribute('src');
+            }
+            $price = $priceNode ? trim($priceNode->textContent) : null;
+            $priceValue = ml_parse_price_brl($price);
         }
-        $price = $priceNode ? trim($priceNode->textContent) : null;
-        $priceValue = ml_parse_price_brl($price);
 
         if ($title && $link) {
             $items[] = [
@@ -504,14 +583,15 @@ function ml_parse_products_from_html($html) {
                 'img' => $img,
                 'price' => $price,
                 'price_value' => $priceValue,
-                'previous_price_value' => null,
-                'discount_label' => null,
-                'sold_quantity' => null,
+                'previous_price_value' => $previousPriceValue,
+                'discount_label' => $discountLabel,
+                'sold_quantity' => $soldQuantity,
                 'rating_count' => null,
-                'rating_value' => null,
-                'shipping_text' => null,
-                'shipping_additional_text' => null,
+                'rating_value' => $ratingValue,
+                'shipping_text' => $shippingText,
+                'shipping_additional_text' => $shippingAdditionalText,
                 'recommended' => null,
+                'sold_text' => $soldText,
             ];
         }
     }
